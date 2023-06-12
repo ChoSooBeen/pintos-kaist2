@@ -112,10 +112,6 @@ void syscall_handler(struct intr_frame *f UNUSED) {
 		break;
 	case SYS_CLOSE:
 		close(f->R.rdi);
-		break;
-	default:
-		exit(-1);
-		break;
 	}
 }
 
@@ -127,6 +123,9 @@ void check_address(void *addr) {
 		exit(-1); // 주소가 없을 경우
 	}
 	if (!is_user_vaddr(addr)) { // 유저 영역에 속해있지 않을 경우
+		exit(-1);
+	}
+	if(pml4_get_page(thread_current()->pml4, addr) == NULL) {
 		exit(-1);
 	}
 }
@@ -214,9 +213,7 @@ int read(int fd, void *buffer, unsigned size) {
 	int result = 0;
 
 	if (fd == 0) {
-		lock_acquire(&filesys_lock);
 		result = input_getc();
-		lock_release(&filesys_lock);
 	}
 	else if (fd == 1) {
 		return -1;
