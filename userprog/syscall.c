@@ -15,7 +15,6 @@
 #include "filesys/file.h"
 #include "devices/input.h"
 #include "threads/palloc.h"
-// #include "include/lib/kernel/console.h"
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
@@ -53,8 +52,7 @@ void close(int fd);
 
 struct lock filesys_lock; // 파일 동기화를 위한 전역변수
 
-void syscall_init(void)
-{
+void syscall_init(void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48 |
 							((uint64_t)SEL_KCSEG) << 32);
 	write_msr(MSR_LSTAR, (uint64_t)syscall_entry);
@@ -69,15 +67,10 @@ void syscall_init(void)
 }
 
 /* The main system call interface */
-void syscall_handler(struct intr_frame *f UNUSED)
-{
-	// TODO: Your implementation goes here.
-
+void syscall_handler(struct intr_frame *f UNUSED) {
 	int sys_num = f->R.rax; // syscall number
-	// printf("sysnum: %d\n", sys_num);
 
-	switch (sys_num)
-	{
+	switch (sys_num) {
 	case SYS_HALT:
 		halt();
 		break;
@@ -124,34 +117,27 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		exit(-1);
 		break;
 	}
-	// printf("system call!\n");
-	// thread_exit ();
 }
 
 /*
  * 주어진 주소가 올바른 주소인지 확인하는 함수
  */
-void check_address(void *addr)
-{
-	if (addr == NULL)
-	{
+void check_address(void *addr) {
+	if (addr == NULL) {
 		exit(-1); // 주소가 없을 경우
 	}
-	if (!is_user_vaddr(addr))
-	{ // 유저 영역에 속해있지 않을 경우
+	if (!is_user_vaddr(addr)) { // 유저 영역에 속해있지 않을 경우
 		exit(-1);
 	}
 }
 
 // 운영체제를 중지한다.
-void halt(void)
-{
+void halt(void) {
 	power_off(); // src/include/threads/init.h
 }
 
 // 현재 프로세스를 중지한다.
-void exit(int status)
-{
+void exit(int status) {
 	struct thread *curr = thread_current();
 	curr->exit_status = status;
 	printf("%s: exit(%d)\n", curr->name, status); // 종료 메시지 출력
@@ -159,25 +145,20 @@ void exit(int status)
 }
 
 // 현재 프로세스를 복사한다.
-int fork(const char *thread_name, struct intr_frame *f)
-{
+int fork(const char *thread_name, struct intr_frame *f) {
 	return process_fork(thread_name, f);
 }
 
 // 현재 프로세스를 전환한다.
-int exec(const char *file)
-{
+int exec(const char *file) {
 	check_address(file);
-
 	char *f_copy = palloc_get_page(0);
-	if (f_copy == NULL)
-	{
+	if (f_copy == NULL) {
 		exit(-1);
 	}
 	strlcpy(f_copy, file, PGSIZE);
 
-	if (process_exec(f_copy) == -1)
-	{
+	if (process_exec(f_copy) == -1) {
 		exit(-1);
 	}
 
@@ -186,85 +167,63 @@ int exec(const char *file)
 }
 
 // 자식 프로세스가 끝날 떄까지 기다린다.
-int wait(int pid)
-{
+int wait(int pid) {
 	return process_wait(pid);
 }
 
 // 파일 생성
-bool create(const char *file, unsigned initial_size)
-{
+bool create(const char *file, unsigned initial_size) {
 	check_address(file); // 유저 영역의 주소인지 확인
 	return filesys_create(file, initial_size);
 }
 
 // 파일 삭제
-bool remove(const char *file)
-{
+bool remove(const char *file) {
 	check_address(file); // 유저 영역의 주소인지 확인
 	return filesys_remove(file);
 }
 
 // 파일 열기
-int open(const char *file)
-{
+int open(const char *file) {
 	check_address(file);
 	struct file *f = filesys_open(file);
-	if (f == NULL)
-	{
+	if (f == NULL) {
 		return -1;
 	}
 	// 파일 디스크립터 생성하기
 	int fd = process_add_file(f);
 
-	if (fd == -1)
-	{
+	if (fd == -1) {
 		file_close(f);
 	}
 	return fd;
 }
 
 // 파일 크기
-int filesize(int fd)
-{
+int filesize(int fd) {
 	struct file *f = process_get_file(fd); // fd를 이용해 파일 가져오기
-	if (f == NULL)
-	{
+	if (f == NULL) {
 		return -1;
 	}
 	return file_length(f);
 }
 
 // 파일 읽기
-int read(int fd, void *buffer, unsigned size)
-{
+int read(int fd, void *buffer, unsigned size) {
 	check_address(buffer);
-	char *ptr = (char *)buffer;
 	int result = 0;
 
-	if (fd == 0)
-	{
-		for (int i = 0; i < size; i++)
-		{
-			char ch = input_getc();
-			if (ch == '\n')
-			{
-				break;
-			}
-			*ptr = ch;
-			ptr++;
-			result++;
-		}
+	if (fd == 0) {
+		lock_acquire(&filesys_lock);
+		result = input_getc();
+		lock_release(&filesys_lock);
 	}
-	else if (fd == 1)
-	{
+	else if (fd == 1) {
 		return -1;
 	}
-	else
-	{
+	else {
 		struct file *f = process_get_file(fd);
-		if (f == NULL)
-		{
+		if (f == NULL) {
 			return -1;
 		}
 		lock_acquire(&filesys_lock);
@@ -280,21 +239,16 @@ int write(int fd, const void *buffer, unsigned size)
 	check_address(buffer);
 	int result = 0;
 
-	if (fd == 1)
-	{
+	if (fd == 1) {
 		putbuf(buffer, size);
-
 		result = size;
 	}
-	else if (fd == 0)
-	{
+	else if (fd == 0) {
 		return -1;
 	}
-	else
-	{
+	else {
 		struct file *f = process_get_file(fd);
-		if (f == NULL)
-		{
+		if (f == NULL) {
 			return -1;
 		}
 		lock_acquire(&filesys_lock);
@@ -305,45 +259,36 @@ int write(int fd, const void *buffer, unsigned size)
 }
 
 // 파일 위치 변경
-void seek(int fd, unsigned position)
-{
-	if (fd < 2)
-	{ // 예약된 파일은 변경 불가
+void seek(int fd, unsigned position){
+	if (fd < 2) { // 예약된 파일은 변경 불가
 		return;
 	}
 	struct file *f = process_get_file(fd);
-	if (f == NULL)
-	{
+	if (f == NULL) {
 		return;
 	}
 	file_seek(f, position);
 }
 
 // 파일 현재 위치 반환
-unsigned tell(int fd)
-{
-	if (fd < 2)
-	{ // 예약된 파일은 변경 불가
+unsigned tell(int fd) {
+	if (fd < 2) { // 예약된 파일은 변경 불가
 		return;
 	}
 	struct file *f = process_get_file(fd);
-	if (f == NULL)
-	{
+	if (f == NULL) {
 		return;
 	}
 	return file_tell(f);
 }
 
 // 파일 닫기
-void close(int fd)
-{
-	if (fd < 2)
-	{ // 예약된 파일은 변경 불가
+void close(int fd) {
+	if (fd < 2) { // 예약된 파일은 변경 불가
 		return;
 	}
 	struct file *f = process_get_file(fd);
-	if (f == NULL)
-	{
+	if (f == NULL) {
 		return;
 	}
 	file_close(f);
