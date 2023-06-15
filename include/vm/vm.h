@@ -31,6 +31,9 @@ enum vm_type {
 #include "filesys/page_cache.h"
 #endif
 
+//해시를 사용하기위한 헤더파일
+#include <hash.h>
+
 struct page_operations;
 struct thread;
 
@@ -46,11 +49,13 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	struct hash_elem hash_elem;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
+	//하나의 구성원만 포함한다. = 페이지 타입을 나타낸다.
 	union {
-		struct uninit_page uninit;
+		struct uninit_page uninit; //지연 로딩을 지원
 		struct anon_page anon;
 		struct file_page file;
 #ifdef EFILESYS
@@ -59,7 +64,9 @@ struct page {
 	};
 };
 
-/* The representation of "frame" */
+/* The representation of "frame" 
+ * 물리적 메모리 관리를 위한 체계
+ */
 struct frame {
 	void *kva;
 	struct page *page;
@@ -69,6 +76,7 @@ struct frame {
  * This is one way of implementing "interface" in C.
  * Put the table of "method" into the struct's member, and
  * call it whenever you needed. */
+//함수 포인터 - 페이지 작업을 가리킨다.
 struct page_operations {
 	bool (*swap_in) (struct page *, void *);
 	bool (*swap_out) (struct page *);
@@ -85,6 +93,7 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct hash *spt;
 };
 
 #include "threads/thread.h"
@@ -110,3 +119,7 @@ bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
 #endif  /* VM_VM_H */
+
+//hash를 위해 추가한 함수
+unsigned page_hash(const struct hash_elem *p_, void *aux UNUSED);
+bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);

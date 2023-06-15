@@ -39,7 +39,9 @@ static struct frame *vm_evict_frame (void);
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
- * `vm_alloc_page`. */
+ * `vm_alloc_page`. 
+ * 전달된 type으로 초기화되지 않은 페이지 생성
+ * */
 bool
 vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
@@ -60,22 +62,35 @@ err:
 	return false;
 }
 
-/* Find VA from spt and return page. On error, return NULL. */
-struct page *
-spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
+/* Find VA from spt and return page. On error, return NULL. 
+ * 추가 페이지 테이블에서 va에 해당하는 페이지 찾는 함수
+ */
+struct page * spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function. */
+	page = malloc(sizeof(struct page));
+	page->va = va;
 
+	//va와 동일한 해시 검색
+	struct hash_elem *e = hash_find(&spt, &page->hash_elem);
+	if (e == NULL) { //없을 경우
+		return NULL;
+	}
+	//있을 경우
+	page = hash_entry(e, struct page, hash_elem);
 	return page;
 }
 
-/* Insert PAGE into spt with validation. */
-bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
+/* Insert PAGE into spt with validation. 
+ * 추가 페이지 테이블에 페이지 삽입하는 함수
+ */
+bool spt_insert_page (struct supplemental_page_table *spt UNUSED, struct page *page UNUSED) {
 	int succ = false;
 	/* TODO: Fill this function. */
-
+	struct hash_elem *e = hash_insert(&spt, &page->hash_elem);
+	if(e == NULL) { //성공했을 경우
+		succ = true;
+	}
 	return succ;
 }
 
@@ -112,6 +127,8 @@ static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+
+	//palloc_get_page 사용자 풀에서 할당
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
@@ -171,20 +188,39 @@ vm_do_claim_page (struct page *page) {
 	return swap_in (page, frame->kva);
 }
 
-/* Initialize new supplemental page table */
-void
-supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+/* Initialize new supplemental page table 
+ * 추가 페이지 테이블 초기화하는 함수
+ */
+void supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	hash_init(spt, page_hash, page_less, NULL);
 }
 
-/* Copy supplemental page table from src to dst */
+/* Copy supplemental page table from src to dst 
+ * 자식이 부모의 실행 컨텍스트를 상속해야 할 때 사용 - fork()
+ */
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		struct supplemental_page_table *src UNUSED) {
 }
 
-/* Free the resource hold by the supplemental page table */
+/* Free the resource hold by the supplemental page table 
+ * process_exit() : 프로세스 종료시 호출
+ */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+}
+
+//들어온 요소 e의 가상 주소 값을 unsigned int형 범위의 값으로 변경
+unsigned page_hash(const struct hash_elem *p_, void *aux UNUSED) {
+	const struct page *p = hash_entry(p_, struct page, hash_elem);
+	return hash_bytes(&p->va, sizeof p->va);
+}
+
+//가상 주소를 비교하여 반환
+bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED) {
+	const struct page *a = hash_entry(a_, struct page, hash_elem);
+	const struct page *b = hash_entry(b_, struct page, hash_elem);
+	return a->va < b->va;
 }
