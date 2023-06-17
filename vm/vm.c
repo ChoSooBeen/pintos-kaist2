@@ -4,6 +4,9 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 
+//페이지 테이블(pml4)를 위한 헤더 추가
+#include "threads/mmu.h"
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -72,8 +75,9 @@ struct page * spt_find_page (struct supplemental_page_table *spt UNUSED, void *v
 	page->va = va;
 
 	//va와 동일한 해시 검색
-	struct hash_elem *e = hash_find(&spt, &page->hash_elem);
+	struct hash_elem *e = hash_find(&spt->hash_table, &page->hash_elem);
 	if (e == NULL) { //없을 경우
+		free(e);
 		return NULL;
 	}
 	//있을 경우
@@ -83,11 +87,12 @@ struct page * spt_find_page (struct supplemental_page_table *spt UNUSED, void *v
 
 /* Insert PAGE into spt with validation. 
  * 추가 페이지 테이블에 페이지 삽입하는 함수
+ * 성공할 경우 : True / 실패할 경우 : False
  */
 bool spt_insert_page (struct supplemental_page_table *spt UNUSED, struct page *page UNUSED) {
 	int succ = false;
 	/* TODO: Fill this function. */
-	struct hash_elem *e = hash_insert(&spt, &page->hash_elem);
+	struct hash_elem *e = hash_insert(&spt->hash_table, &page->hash_elem);
 	if(e == NULL) { //성공했을 경우
 		succ = true;
 	}
@@ -123,15 +128,21 @@ vm_evict_frame (void) {
  * and return it. This always return valid address. That is, if the user pool
  * memory is full, this function evicts the frame to get the available memory
  * space.*/
-static struct frame *
-vm_get_frame (void) {
+static struct frame *vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+	//사용자 풀에서 페이지를 할당받기 - 할당받은 물리 메모리 주소 반환
+	void *addr = palloc_get_page(PAL_USER);
+	if(addr == NULL) {
+		PANIC("todo");
+	}
 
-	//palloc_get_page 사용자 풀에서 할당
+	frame = malloc(sizeof(struct frame));
+	frame->kva = addr;
 
-	ASSERT (frame != NULL);
+	ASSERT(frame != NULL);
 	ASSERT (frame->page == NULL);
+
 	return frame;
 }
 
@@ -170,7 +181,10 @@ bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
-
+	page = spt_find_page(&thread_current()->spt, va);
+	if(page == NULL) {
+		return false;
+	}
 	return vm_do_claim_page (page);
 }
 
@@ -184,6 +198,7 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable);
 
 	return swap_in (page, frame->kva);
 }
@@ -192,7 +207,7 @@ vm_do_claim_page (struct page *page) {
  * 추가 페이지 테이블 초기화하는 함수
  */
 void supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
-	hash_init(spt, page_hash, page_less, NULL);
+	hash_init(&spt->hash_table, page_hash, page_less, NULL);
 }
 
 /* Copy supplemental page table from src to dst 
