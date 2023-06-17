@@ -3,6 +3,9 @@
 #include <stdbool.h>
 #include "threads/palloc.h"
 
+//해시를 사용하기위한 헤더파일
+#include <hash.h>
+
 enum vm_type {
 	/* page not initialized */
 	VM_UNINIT = 0,
@@ -31,9 +34,6 @@ enum vm_type {
 #include "filesys/page_cache.h"
 #endif
 
-//해시를 사용하기위한 헤더파일
-#include <hash.h>
-
 struct page_operations;
 struct thread;
 
@@ -53,12 +53,8 @@ struct page {
 
 	bool writable;			/* True : 쓰기 가능 */
 	bool is_loaded;			/* 물리 메모리에 탑재 여부를 알려주는 플래그 */
-	struct file *f;			/* 가상 주소와 매핑된 파일 */
+	
 	// struct listelem mmap_elem; /* mmap list element */
-	size_t offset;			/* 읽어야할 파일 offset */
-	size_t read_bytes;		/* 가상 페이지에 쓰여져 있는 데이터 크기 */
-	size_t zero_bytes;		/* 0으로 채울 남은 페이지 byte */
-
 	// size_t swap_slot;		/* swap slot 시 사용 */
 
 	/* Per-type data are binded into the union.
