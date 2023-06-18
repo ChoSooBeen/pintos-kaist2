@@ -127,5 +127,6 @@ enum vm_type page_get_type (struct page *page);
 //hash를 위해 추가한 함수
 unsigned page_hash(const struct hash_elem *p_, void *aux UNUSED);
 bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
+void hash_page_destroy(struct hash_elem *e, void *aux);
 
 #endif  /* VM_VM_H */
