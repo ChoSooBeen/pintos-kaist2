@@ -3,8 +3,7 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
-
-//페이지 테이블(pml4)를 위한 헤더 추가
+//pg_round_down() 함수를 위해 추가
 #include "threads/mmu.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -58,8 +57,20 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
-
+		struct page *p = (struct page *)malloc(sizeof(struct page));
+		bool (*initializer)(struct page *, enum vm_type, void *); //함수 포인터
+		switch (VM_TYPE(type)) {
+			case VM_ANON :
+				initializer = anon_initializer;
+				break;
+			case VM_FILE :
+				initializer = file_backed_initializer;
+				break;
+		}
+		uninit_new(p, upage, init, type, aux, initializer);
+		p->writable = writable;
 		/* TODO: Insert the page into the spt. */
+		return spt_insert_page(spt, p);
 	}
 err:
 	return false;
@@ -71,12 +82,13 @@ err:
 struct page * spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function. */
-	page->va = va;
+	page = (struct page *)malloc(sizeof(struct page));
+	page->va = pg_round_down(va);
 
 	//va와 동일한 해시 검색
 	struct hash_elem *e = hash_find(&spt->hash_table, &page->hash_elem);
 	if (e == NULL) { //없을 경우
-		free(e);
+		free(page);
 		return NULL;
 	}
 	//있을 경우
@@ -100,7 +112,8 @@ bool spt_insert_page (struct supplemental_page_table *spt UNUSED, struct page *p
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
-	vm_dealloc_page (page);
+	hash_delete(&spt->hash_table, &page->hash_elem);
+	vm_dealloc_page(page);
 	return true;
 }
 
@@ -136,8 +149,9 @@ static struct frame *vm_get_frame (void) {
 		PANIC("todo");
 	}
 
-	frame = malloc(sizeof(struct frame));
+	frame = (struct frame *)malloc(sizeof(struct frame));
 	frame->kva = addr;
+	frame->page = NULL;
 
 	ASSERT(frame != NULL);
 	ASSERT (frame->page == NULL);
@@ -163,8 +177,20 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-
-	return vm_do_claim_page (page);
+	if(addr == NULL) {
+		return false;
+	}
+	if(not_present) {
+		page = spt_find_page(spt, addr);
+		if(page == NULL) {
+			return false;
+		}
+		if(write && !page->writable) {
+			return false;
+		}
+		return vm_do_claim_page(page);
+	}
+	return false;
 }
 
 /* Free the page.
@@ -213,8 +239,31 @@ void supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
  * 자식이 부모의 실행 컨텍스트를 상속해야 할 때 사용 - fork()
  */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct supplemental_page_table *src UNUSED) {
+	// struct hash_iterator i; //해시 테이블 내의 위치
+	// hash_first(&i, &src->hash_table); //i를 해시의 첫번째 요소를 가리키도록 초기화
+	// while(hash_next(&i)) { //해시의 다음 요소가 있을 때까지 반복
+	// 	struct page *src_page = hash_entry(hash_cur(&i), struct page, hash_elem);
+	// 	enum vm_type type = src_page->operations->type;
+	// 	void *va = src_page->va;
+	// 	bool writable = src_page->writable;
+
+	// 	if(type == VM_UNINIT) {
+	// 		vm_alloc_page_with_initializer(type, va, writable, src_page->uninit.init, src_page->uninit.aux);
+	// 	}
+	// 	else if(type == VM_FILE) {
+	// 		struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
+	// 		vme->f = src_page->file.file;
+	// 		vme->offset = src_page->file.offset;
+	// 		vme->read_bytes = src_page->file.read_bytes;
+	// 		vme->zero_bytes = src_page->file.zero_bytes;
+
+	// 		if(!vm_alloc_page_with_initializer(type, va,writable, NULL, vme)) {
+	// 			return false;
+	// 		}
+	// 		struct page *page = spt_find_page(dst, va);
+	// 	}
+	// }
 }
 
 /* Free the resource hold by the supplemental page table 
@@ -224,6 +273,7 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	hash_clear(&spt->hash_table, hash_page_destroy);
 }
 
 //들어온 요소 e의 가상 주소 값을 unsigned int형 범위의 값으로 변경
@@ -237,4 +287,10 @@ bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux
 	const struct page *a = hash_entry(a_, struct page, hash_elem);
 	const struct page *b = hash_entry(b_, struct page, hash_elem);
 	return a->va < b->va;
+}
+
+void hash_page_destroy(struct hash_elem *e, void *aux) {
+	struct page *p = hash_entry(e, struct page, hash_elem);
+	destroy(p);
+	free(p);
 }
