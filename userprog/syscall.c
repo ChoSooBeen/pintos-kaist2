@@ -125,9 +125,9 @@ void check_address(void *addr) {
 	if (!is_user_vaddr(addr)) { // 유저 영역에 속해있지 않을 경우
 		exit(-1);
 	}
-	if(pml4_get_page(thread_current()->pml4, addr) == NULL) {
-		exit(-1);
-	}
+	// if(pml4_get_page(thread_current()->pml4, addr) == NULL) {
+	// 	exit(-1);
+	// }
 }
 
 // 운영체제를 중지한다.
