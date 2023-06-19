@@ -4,6 +4,7 @@
 struct page;
 enum vm_type;
 
+// 익명 페이지 구조체 - 필요한 정보(멤버) 추가
 struct anon_page {
 };
 

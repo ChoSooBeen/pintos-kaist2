@@ -2,6 +2,7 @@
 #define USERPROG_PROCESS_H
 
 #include "threads/thread.h"
+#include "vm/vm.h"
 
 tid_t process_create_initd(const char *file_name);
 tid_t process_fork(const char *name, struct intr_frame *if_);
@@ -22,8 +23,8 @@ struct file *process_get_file(int fd);
 struct vm_entry {
 	struct file *f;			/* 가상 주소와 매핑된 파일 */
 	off_t offset;			/* 읽어야할 파일 offset */
-	uint64_t read_bytes;	/* 가상 페이지에 쓰여져 있는 데이터 크기 */
-	uint64_t zero_bytes;	/* 0으로 채울 남은 페이지 byte */
+	uint32_t read_bytes;	/* 가상 페이지에 쓰여져 있는 데이터 크기 */
+	uint32_t zero_bytes;	/* 0으로 채울 남은 페이지 byte */
 };
 
 #endif /* userprog/process.h */

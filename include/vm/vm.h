@@ -53,9 +53,7 @@ struct page {
 
 	bool writable;			/* True : 쓰기 가능 */
 	bool is_loaded;			/* 물리 메모리에 탑재 여부를 알려주는 플래그 */
-	
-	// struct listelem mmap_elem; /* mmap list element */
-	// size_t swap_slot;		/* swap slot 시 사용 */
+	int mapped_page_count;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -76,6 +74,7 @@ struct page {
 struct frame {
 	void *kva; //커널 가상 주소
 	struct page *page;
+	// struct list_elem frame_elem; //frame_table
 };
 
 /* The function table for page operations.
