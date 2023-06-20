@@ -65,7 +65,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		// 	goto err;
 		// }
 		bool (*initializer)(struct page *, enum vm_type, void *); //함수 포인터
-		switch (VM_TYPE(type)) {
+		switch (VM_TYPE(type)) { //타입에 맞는 초기화 함수 지정
 			case VM_ANON :
 				initializer = anon_initializer;
 				break;
@@ -76,7 +76,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 				NOT_REACHED();
 				break;
 			}
-		uninit_new(p, upage, init, type, aux, initializer);
+		uninit_new(p, upage, init, type, aux, initializer); //VM_UNINIT 타입으로 페이지 생성
 		p->writable = writable;
 		/* TODO: Insert the page into the spt. */
 		return spt_insert_page(spt, p);
@@ -190,6 +190,7 @@ static struct frame *vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	vm_alloc_page(VM_ANON | VM_MARKER_0, pg_round_down(addr), 1);
 }
 
 /* Handle the fault on write_protected page */
@@ -205,8 +206,20 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
+	if (addr == NULL || (is_kernel_vaddr(addr) && user)) { //올바르지 못한 주소일 경우
+		return false;
+	}
+	if (not_present) { //접근하려는 페이지가 물리 메모리에 존재하지 않을 경우
+		void *rsp = f->rsp;
+		if(((USER_STACK - (1 << 20) <= rsp - 8 && rsp - 8 == addr) || (USER_STACK - (1 << 20) <= rsp && rsp == addr)) && addr <= USER_STACK) {
+			vm_stack_growth(addr);
+		}
+	}
 	page = spt_find_page(spt, addr);
 	if(page == NULL) {
+		return false;
+	}
+	if (write == 1 && page->writable == 0) { //권한이 없는데 쓰려고 하는 경우
 		return false;
 	}
 	return vm_do_claim_page(page);
@@ -270,10 +283,10 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct
 		void *va = src_page->va;
 		bool writable = src_page->writable;
 
-		if(type == VM_UNINIT) {
+		if(type == VM_UNINIT) { //초기화되지 않은 페이지인 경우
 			vm_alloc_page_with_initializer(VM_ANON, va, writable, src_page->uninit.init, src_page->uninit.aux);
 		}
-		else if(type == VM_FILE) {
+		else if(type == VM_FILE) { //파일 타입일 경우
 			struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
 			vme->f = src_page->file.file;
 			vme->offset = src_page->file.offset;
@@ -288,7 +301,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct
 			page->frame = src_page->frame;
 			pml4_set_page(thread_current()->pml4, page->va, src_page->frame->kva, src_page->writable);
 		}
-		else {
+		else { //익명 페이지일 경우
 			if(!vm_alloc_page(type, va, writable)) {
 				return false;
 			}
