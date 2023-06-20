@@ -61,9 +61,9 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
 		struct page *p = (struct page *)malloc(sizeof(struct page));
-		// if(p == NULL) { //page가 할당되지 않았을 경우
-		// 	goto err;
-		// }
+		if(p == NULL) {
+			goto err;
+		}
 		bool (*initializer)(struct page *, enum vm_type, void *); //함수 포인터
 		switch (VM_TYPE(type)) { //타입에 맞는 초기화 함수 지정
 			case VM_ANON :
@@ -219,7 +219,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	if(page == NULL) {
 		return false;
 	}
-	if (write == 1 && page->writable == 0) { //권한이 없는데 쓰려고 하는 경우
+	if (write && (!page->writable)) { //권한이 없는데 쓰려고 하는 경우
 		return false;
 	}
 	return vm_do_claim_page(page);
