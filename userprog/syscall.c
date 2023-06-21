@@ -36,6 +36,8 @@ int write(int fd, const void *buffer, unsigned size);
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap(void *addr);
 
 /* System call.
  *
@@ -112,6 +114,13 @@ void syscall_handler(struct intr_frame *f UNUSED) {
 		break;
 	case SYS_CLOSE:
 		close(f->R.rdi);
+		break;
+	case SYS_MMAP:
+		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+		break;
+	case SYS_MUNMAP:
+		munmap(f->R.rdi);
+		break;
 	}
 }
 
@@ -290,4 +299,34 @@ void close(int fd) {
 	}
 	file_close(f);
 	process_close_file(fd); // fdt에서 제거하기
+}
+
+//메모리 매핑
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
+	if(!addr || addr != pg_round_down(addr)) { //addr이 존재하지 않거나 정렬되어 있지 않은 경우
+		return NULL;
+	}
+	if (offset != pg_round_down(offset)) { //offset이 정렬되어 있지 않은 경우
+		return NULL;
+	}
+    if (!is_user_vaddr(addr) || !is_user_vaddr(addr + length)) { //사용자 영역에 존재하지 않을 경우
+		return NULL;
+	}
+    if (spt_find_page(&thread_current()->spt, addr)) { //addr에 할당된 페이지가 존재할 경우
+		return NULL;
+	}
+    struct file *f = process_get_file(fd); //fd에 파일이 없을 경우
+    if (f == NULL) {
+		return NULL;
+	}
+    if (file_length(f) == 0 || (int)length <= 0) { //길이가 0이하일 경우
+		return NULL;
+	}
+
+    return do_mmap(addr, length, writable, f, offset); 
+}
+
+//메모리 매핑 해제
+void munmap(void *addr) {
+	do_munmap(addr);
 }

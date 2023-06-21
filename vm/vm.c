@@ -116,8 +116,7 @@ bool spt_insert_page (struct supplemental_page_table *spt UNUSED, struct page *p
 	return succ;
 }
 
-void
-spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
+void spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 	struct hash_elem *e = hash_delete(&spt->hash_table, &page->hash_elem);
 	if(e == NULL) {
 		return;
@@ -277,14 +276,14 @@ bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct supplemental_page_table *src UNUSED) {
 	struct hash_iterator i; //해시 테이블 내의 위치
 	hash_first(&i, &src->hash_table); //i를 해시의 첫번째 요소를 가리키도록 초기화
-	while(hash_next(&i)) { //해시의 다음 요소가 있을 때까지 반복
+	while (hash_next(&i)) { // 해시의 다음 요소가 있을 때까지 반복
 		struct page *src_page = hash_entry(hash_cur(&i), struct page, hash_elem);
 		enum vm_type type = src_page->operations->type;
 		void *va = src_page->va;
 		bool writable = src_page->writable;
 
 		if(type == VM_UNINIT) { //초기화되지 않은 페이지인 경우
-			vm_alloc_page_with_initializer(VM_ANON, va, writable, src_page->uninit.init, src_page->uninit.aux);
+			vm_alloc_page_with_initializer(page_get_type(src_page), va, writable, src_page->uninit.init, src_page->uninit.aux);
 		}
 		else if(type == VM_FILE) { //파일 타입일 경우
 			struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));

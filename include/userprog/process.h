@@ -19,6 +19,9 @@ int process_add_file(struct file *f);
 void process_close_file(int fd);
 struct file *process_get_file(int fd);
 
+//file.c에서 호출하기 위해 선언
+bool lazy_load_segment(struct page *page, void *aux);
+
 //lazy_load_segment에 넘겨줄 인자들
 struct vm_entry {
 	struct file *f;			/* 가상 주소와 매핑된 파일 */

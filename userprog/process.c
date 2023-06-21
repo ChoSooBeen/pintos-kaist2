@@ -93,9 +93,9 @@ tid_t process_fork(const char *name, struct intr_frame *if_ UNUSED)
 
 	struct thread *child = get_child_process(tid);
 	sema_down(&child->load_sema);
-	if (child->exit_status == -2)
+	if (child->exit_status == TID_ERROR)
 	{
-		sema_up(&child->exit_sema);
+		// sema_up(&child->exit_sema);
 		return TID_ERROR;
 	}
 
@@ -214,7 +214,7 @@ __do_fork(void *aux)
 error:
 	sema_up(&current->load_sema);
 	// thread_exit();
-	exit(-2);
+	exit(TID_ERROR);
 }
 
 /* Switch the current execution context to the f_name.
@@ -318,6 +318,7 @@ void process_exit(void)
 	palloc_free_page(curr->fdt);
 	file_close(curr->running);
 	process_cleanup();
+	// hash_destroy(&curr->spt.hash_table, NULL);
 	sema_up(&curr->wait_sema);
 	sema_down(&curr->exit_sema);
 }
@@ -693,7 +694,7 @@ install_page(void *upage, void *kpage, bool writable)
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
-static bool
+bool
 lazy_load_segment(struct page *page, void *aux)
 {
 	/* TODO: Load the segment from the file */
