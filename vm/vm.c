@@ -64,19 +64,19 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		if(p == NULL) {
 			goto err;
 		}
-		bool (*initializer)(struct page *, enum vm_type, void *); //함수 포인터
+		bool (*page_initializer)(struct page *, enum vm_type, void *); //함수 포인터
 		switch (VM_TYPE(type)) { //타입에 맞는 초기화 함수 지정
 			case VM_ANON :
-				initializer = anon_initializer;
+				page_initializer = anon_initializer;
 				break;
 			case VM_FILE :
-				initializer = file_backed_initializer;
+				page_initializer = file_backed_initializer;
 				break;
 			default :
 				NOT_REACHED();
 				break;
 			}
-		uninit_new(p, upage, init, type, aux, initializer); //VM_UNINIT 타입으로 페이지 생성
+		uninit_new(p, upage, init, type, aux, page_initializer); //VM_UNINIT 타입으로 페이지 생성
 		p->writable = writable;
 		/* TODO: Insert the page into the spt. */
 		return spt_insert_page(spt, p);
@@ -96,7 +96,8 @@ struct page * spt_find_page (struct supplemental_page_table *spt UNUSED, void *v
 
 	//va와 동일한 해시 검색
 	struct hash_elem *e = hash_find(&spt->hash_table, &page->hash_elem);
-	if (e == NULL) { //없을 경우
+	free(page); //사용을 완료한 페이지 메모리 해제하기
+	if (e == NULL) { // 없을 경우
 		return NULL;
 	}
 	return hash_entry(e, struct page, hash_elem);
@@ -116,6 +117,7 @@ bool spt_insert_page (struct supplemental_page_table *spt UNUSED, struct page *p
 	return succ;
 }
 
+//SPT에서 페이지 제거하는 함수
 void spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 	struct hash_elem *e = hash_delete(&spt->hash_table, &page->hash_elem);
 	if(e == NULL) {
@@ -213,15 +215,17 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		if(((USER_STACK - (1 << 20) <= rsp - 8 && rsp - 8 == addr) || (USER_STACK - (1 << 20) <= rsp && rsp == addr)) && addr <= USER_STACK) {
 			vm_stack_growth(addr);
 		}
+
+		page = spt_find_page(spt, addr);
+		if(page == NULL) {
+			return false;
+		}
+		if (write && (!page->writable)) { //권한이 없는데 쓰려고 하는 경우
+			return false;
+		}
+		return vm_do_claim_page(page);
 	}
-	page = spt_find_page(spt, addr);
-	if(page == NULL) {
-		return false;
-	}
-	if (write && (!page->writable)) { //권한이 없는데 쓰려고 하는 경우
-		return false;
-	}
-	return vm_do_claim_page(page);
+	return false;
 }
 
 /* Free the page.
