@@ -71,6 +71,11 @@ void syscall_init(void) {
 /* The main system call interface */
 void syscall_handler(struct intr_frame *f UNUSED) {
 	int sys_num = f->R.rax; // syscall number
+	
+	//사용자에서 커널 모드로 초기 전환 시 rsp를 struct 스레드에 저장하는 것과 같은 다른 방법을 준비해야 한다.
+	#ifdef VM
+		thread_current()->rsp = f->rsp;
+	#endif
 
 	switch (sys_num) {
 	case SYS_HALT:

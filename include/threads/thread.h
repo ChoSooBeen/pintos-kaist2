@@ -121,6 +121,8 @@ struct thread {
 	struct semaphore exit_sema;			/* 종료 확인 */
 	struct semaphore wait_sema;			/* 기다림 확인 */
 
+	uint64_t rsp;						/* rsp를 저장할 멤버 */
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
