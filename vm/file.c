@@ -56,7 +56,7 @@ file_backed_swap_out (struct page *page) {
 static void
 file_backed_destroy (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
-	if(pml4_is_dirty(thread_current()->pml4, page->va)) {
+	if(pml4_is_dirty(thread_current()->pml4, page->va)) { //dirty bit = 1일 경우 swap out 가능
 		//변경사항을 파일에 저장하기
 		file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->offset);
 		//dirty bit = 0
@@ -101,6 +101,7 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 		vme->zero_bytes = page_zero_bytes;
 
 		if(!vm_alloc_page_with_initializer(VM_FILE, addr, writable, lazy_load_segment, vme)) {
+			file_close(f);
 			return NULL;
 		}
 
