@@ -75,7 +75,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			default :
 				NOT_REACHED();
 				break;
-			}
+		}
 		uninit_new(p, upage, init, type, aux, page_initializer); //VM_UNINIT 타입으로 페이지 생성
 		p->writable = writable;
 		/* TODO: Insert the page into the spt. */
@@ -119,11 +119,9 @@ bool spt_insert_page (struct supplemental_page_table *spt UNUSED, struct page *p
 
 //SPT에서 페이지 제거하는 함수
 void spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
-	struct hash_elem *e = hash_delete(&spt->hash_table, &page->hash_elem);
-	if(e == NULL) {
-		return;
+	if(page != NULL) {
+		vm_dealloc_page(page);
 	}
-	vm_dealloc_page(page);
 	return;
 }
 
@@ -200,22 +198,32 @@ vm_handle_wp (struct page *page UNUSED) {
 }
 
 /* Return true on success */
-bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
+bool vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
 	struct page *page = NULL;
+
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-	if (addr == NULL || (is_kernel_vaddr(addr) && user)) { //올바르지 못한 주소일 경우
+	
+	// printf("vm_try_handle_fault | vm.c:209\n");
+	if (addr == NULL || is_kernel_vaddr(addr)) {
+		// printf("bad addr | vm.c:213");
 		return false;
 	}
+
 	if (not_present) { //접근하려는 페이지가 물리 메모리에 존재하지 않을 경우
+		// printf("not present ok | vm.c:218\n");
 		void *rsp = f->rsp;
-		if(((USER_STACK - (1 << 20) <= rsp - 8 && rsp - 8 == addr) || (USER_STACK - (1 << 20) <= rsp && rsp == addr)) && addr <= USER_STACK) {
+		if(!user) {
+			// printf("kernel access | vm.c:221\n");
+			rsp = thread_current()->rsp;
+		}
+		//USER_STACK - (1 << 20) = 스택 최대 크기 = 1MB
+		//x86-64 PUSH 명령어는 스택 포인터를 조정하기 전에 액세스 권한을 확인하므로 스택 포인터 아래 8바이트의 페이지 장애가 발생할 수 있다.
+		if ((USER_STACK - (1 << 20) <= rsp - 8 && rsp - 8 == addr && addr <= USER_STACK) || (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK)) {
+			// printf("vm_stack_growth  | vm.c:227\n");
 			vm_stack_growth(addr);
 		}
-
 		page = spt_find_page(spt, addr);
 		if(page == NULL) {
 			return false;
@@ -225,6 +233,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		}
 		return vm_do_claim_page(page);
 	}
+	// printf("present | vm.c:238\n");
 	return false;
 }
 
