@@ -2,6 +2,8 @@
     "files.associations": {
         "*.inc": "c",
         "syscall.h": "c",
-        "thread.h": "c"
+        "thread.h": "c",
+        "stdint.h": "c",
+        "exception.h": "c"
     }
 }

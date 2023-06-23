@@ -39,6 +39,13 @@ struct thread;
 
 #define VM_TYPE(type) ((type) & 7)
 
+/* 추가한 전역 변수들 */
+struct list frame_table; //lru 방식으로 희생자 선택
+struct lock frame_table_lock;
+
+struct list swap_table; //swap slot 사용 여부를 판단하기 위해 사용
+struct lock swap_table_lock;
+
 /* The representation of "page".
  * This is kind of "parent class", which has four "child class"es, which are
  * uninit_page, file_page, anon_page, and page cache (project4).
@@ -54,8 +61,6 @@ struct page {
 	bool writable;			/* True : 쓰기 가능 */
 	bool is_loaded;			/* 물리 메모리에 탑재 여부를 알려주는 플래그 */
 	int mapped_page_count;	/* 현재 페이지에 매핑된 파일 개수 */
-
-	// struct list_elem lru_elem; /* swap을 위한 lru list 요소 */
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -76,15 +81,22 @@ struct page {
 struct frame {
 	void *kva; //커널 가상 주소
 	struct page *page;
-	// struct list_elem frame_elem; //frame_table
+	struct list_elem frame_elem; //frame_table
+};
+
+struct slot {
+	struct page *page;
+	uint32_t slot_num;
+	struct list_elem swap_elem;
 };
 
 /* The function table for page operations.
  * This is one way of implementing "interface" in C.
  * Put the table of "method" into the struct's member, and
  * call it whenever you needed. */
-//함수 포인터 - 페이지 작업을 가리킨다.
-struct page_operations {
+// 함수 포인터 - 페이지 작업을 가리킨다.
+struct page_operations
+{
 	bool (*swap_in) (struct page *, void *);
 	bool (*swap_out) (struct page *);
 	void (*destroy) (struct page *);

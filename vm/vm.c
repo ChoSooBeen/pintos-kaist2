@@ -21,6 +21,10 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+
+	//frame_table에 관한 변수 초기화
+	list_init(&frame_table);
+	lock_init(&frame_table_lock);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -125,41 +129,48 @@ void spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 	return;
 }
 
-/* Get the struct frame, that will be evicted. */
+/* Get the struct frame, that will be evicted. 
+ * swap out할 페이지 선택하기
+ */
 static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
 	/* TODO: The policy for eviction is up to you. */
-	// struct thread *curr = thread_current();
+	struct thread *curr = thread_current();
 
-	// lock_acquire(&frame_table_lock);
-	// for (struct list_elem *start = list_begin(&frame_table); start != list_end(&frame_table); start = list_next(start)) {
-	// 	victim = list_entry(start, struct frame, frame_elem);
-	// 	if(victim->page == NULL) {
-	// 		lock_release(&frame_table_lock);
-	// 		return victim;
-	// 	}
-	// 	if (pml4_is_accessed(curr->pml4, victim->page->va)) {
-	// 		pml4_set_accessed(curr->pml4, victim->page->va, 0);
-	// 	}
-	// 	else {
-	// 		lock_release(&frame_table_lock);
-	// 		return victim;
-	// 	}
-	// }
-	// lock_release(&frame_table_lock);
+	lock_acquire(&frame_table_lock);
+	for (struct list_elem *f = list_begin(&frame_table); f != list_end(&frame_table); f = list_next(f)) {
+		victim = list_entry(f, struct frame, frame_elem);
+		if(victim->page == NULL) { //현재 프레임에 페이지가 없으므로 희생자로 선택
+			lock_release(&frame_table_lock);
+			return victim;
+		}
+
+		//PTE에 접근했는지 여부 판단 : 즉 최근에 접급한 적이 있으면
+		if (pml4_is_accessed(curr->pml4, victim->page->va)) {
+			//접근 비트를 0으로 설정
+			pml4_set_accessed(curr->pml4, victim->page->va, 0);
+		}
+		else { //최근에 접근한 적이 없으면 희생자로 선택
+			lock_release(&frame_table_lock);
+			return victim;
+		}
+	}
+	lock_release(&frame_table_lock);
 	return victim;
 }
 
 /* Evict one page and return the corresponding frame.
- * Return NULL on error.*/
+ * Return NULL on error.
+ * 희생자 swap out 하기
+ */
 static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
-	// if(victim->page) {
-	// 	swap_out(victim->page);
-	// }
+	if(victim->page) {
+		swap_out(victim->page);
+	}
 	return victim;
 }
 
@@ -173,12 +184,19 @@ static struct frame *vm_get_frame (void) {
 	//사용자 풀에서 페이지를 할당받기 - 할당받은 물리 메모리 주소 반환
 	void *addr = palloc_get_page(PAL_USER);
 	if(addr == NULL) {
-		PANIC("vm_get_frame()");
+		//할당받을 수 있는 영역이 없을 경우 희생자 선택
+		frame = vm_evict_frame();
+		frame->page = NULL;
+		return frame;
 	}
 
 	frame = (struct frame *)malloc(sizeof(struct frame));
 	frame->kva = addr;
 	frame->page = NULL;
+
+	lock_acquire(&frame_table_lock);
+	list_push_back(&frame_table, &frame->frame_elem);
+	lock_release(&frame_table_lock);
 
 	ASSERT(frame != NULL);
 	ASSERT (frame->page == NULL);
