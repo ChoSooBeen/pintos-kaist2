@@ -220,7 +220,7 @@ bool vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED, bool u
 		}
 		//USER_STACK - (1 << 20) = 스택 최대 크기 = 1MB
 		//x86-64 PUSH 명령어는 스택 포인터를 조정하기 전에 액세스 권한을 확인하므로 스택 포인터 아래 8바이트의 페이지 장애가 발생할 수 있다.
-		if ((USER_STACK - (1 << 20) <= rsp - 8 && rsp - 8 == addr && addr <= USER_STACK) || (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK)) {
+		if ((USER_STACK - (1 << 20) <= rsp - 8 && rsp - 8 <= addr && addr <= USER_STACK)) {
 			// printf("vm_stack_growth  | vm.c:227\n");
 			vm_stack_growth(addr);
 		}
