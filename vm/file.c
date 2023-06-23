@@ -94,13 +94,14 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-		struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry *));
+		struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
 		vme->f = f;
 		vme->offset = offset;
 		vme->read_bytes = page_read_bytes;
 		vme->zero_bytes = page_zero_bytes;
 
 		if(!vm_alloc_page_with_initializer(VM_FILE, addr, writable, lazy_load_segment, vme)) {
+			free(vme);
 			file_close(f);
 			return NULL;
 		}
@@ -124,7 +125,7 @@ do_munmap (void *addr) {
 	int count = p->mapped_page_count;
 	for (int i = 0; i < count; i++) {
 		if(p) {
-			destroy(p);
+			file_backed_destroy(p);
 		}
 		addr += PGSIZE;
 		p = spt_find_page(spt, addr);

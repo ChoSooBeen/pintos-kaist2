@@ -53,7 +53,9 @@ struct page {
 
 	bool writable;			/* True : 쓰기 가능 */
 	bool is_loaded;			/* 물리 메모리에 탑재 여부를 알려주는 플래그 */
-	int mapped_page_count;
+	int mapped_page_count;	/* 현재 페이지에 매핑된 파일 개수 */
+
+	// struct list_elem lru_elem; /* swap을 위한 lru list 요소 */
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */

@@ -226,21 +226,32 @@ int read(int fd, void *buffer, unsigned size) {
 	check_address(buffer);
 	int result = 0;
 
+	//page fault가 발생하여 읽어올 때 spt확인
+	//쓰기 권한이 없는 경우 종료 -> 읽기 전용이 아닌 페이지에 대한 수정 시도 방지
+	#ifdef VM
+		struct page *read_page = spt_find_page(&thread_current()->spt, buffer);
+		if(read_page && !read_page->writable){
+			exit(-1);
+		}
+	#endif
+
+	lock_acquire(&filesys_lock);
 	if (fd == 0) {
 		result = input_getc();
 	}
 	else if (fd == 1) {
+		lock_release(&filesys_lock);
 		return -1;
 	}
 	else {
 		struct file *f = process_get_file(fd);
 		if (f == NULL) {
+			lock_release(&filesys_lock);
 			return -1;
 		}
-		lock_acquire(&filesys_lock);
 		result = file_read(f, buffer, size);
-		lock_release(&filesys_lock);
 	}
+	lock_release(&filesys_lock);
 	return result;
 }
 
