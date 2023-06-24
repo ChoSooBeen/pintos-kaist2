@@ -54,10 +54,10 @@ file_backed_swap_out (struct page *page) {
 	struct thread *t = thread_current();
 	if(pml4_is_dirty(t->pml4, page->va)) { //dirty bit = 1일 경우 swap out 가능
 		//변경사항을 파일에 저장하기
-		file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->offset);
-		//dirty bit = 0
-		pml4_set_dirty(thread_current()->pml4, page->va, 0);
+		file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->offset);
 	}
+	//dirty bit = 0
+	pml4_set_dirty(thread_current()->pml4, page->va, 0);
 	page->frame->page = NULL;
 	page->frame = NULL;
 	pml4_clear_page(t->pml4, page->va);
