@@ -248,7 +248,9 @@ int process_exec(void *f_name)
 	/* ---------------------------------- */
 
 	/* And then load the binary */
+	lock_acquire(&filesys_lock);
 	success = load(file_name, &_if);
+	lock_release(&filesys_lock);
 
 	if (!success)
 	{

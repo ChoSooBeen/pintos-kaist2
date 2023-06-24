@@ -4,4 +4,6 @@
 void syscall_init(void);
 void close(int fd);
 
+struct lock filesys_lock; // 파일 동기화를 위한 전역변수
+
 #endif /* userprog/syscall.h */
