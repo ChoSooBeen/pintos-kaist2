@@ -59,7 +59,6 @@ struct page {
 	struct hash_elem hash_elem; /* hash table element */
 
 	bool writable;			/* True : 쓰기 가능 */
-	bool is_loaded;			/* 물리 메모리에 탑재 여부를 알려주는 플래그 */
 	int mapped_page_count;	/* 현재 페이지에 매핑된 파일 개수 */
 
 	/* Per-type data are binded into the union.

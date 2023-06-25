@@ -17,7 +17,7 @@
 #endif
 
 /* Number of timer ticks since OS booted. */
-static int64_t ticks; // global tick으로 생각한다.
+static int64_t ticks; // os 부팅 후 계속해서 증가하는 시간
 
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
@@ -81,7 +81,9 @@ timer_ticks(void)
 }
 
 /* Returns the number of timer ticks elapsed since THEN, which
-   should be a value once returned by timer_ticks(). */
+ * should be a value once returned by timer_ticks(). 
+ * 타이머가 시작된 이후로 경과한 시간을 측정하는 함수
+ */
 int64_t
 timer_elapsed(int64_t then)
 {

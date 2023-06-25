@@ -52,12 +52,12 @@ static bool
 file_backed_swap_out (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
 	struct thread *t = thread_current();
-	if(pml4_is_dirty(t->pml4, page->va)) { //dirty bit = 1일 경우 swap out 가능
+	if(pml4_is_dirty(t->pml4, page->va)) { //dirty bit = 1일 경우 변경사항이 있다.
 		//변경사항을 파일에 저장하기
 		file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->offset);
+		//dirty bit = 0
+		pml4_set_dirty(thread_current()->pml4, page->va, 0);
 	}
-	//dirty bit = 0
-	pml4_set_dirty(thread_current()->pml4, page->va, 0);
 	page->frame->page = NULL;
 	page->frame = NULL;
 	pml4_clear_page(t->pml4, page->va);
@@ -68,13 +68,14 @@ file_backed_swap_out (struct page *page) {
 static void
 file_backed_destroy (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
-	if(pml4_is_dirty(thread_current()->pml4, page->va)) { 
+	struct thread *t = thread_current();
+	if(pml4_is_dirty(t->pml4, page->va)) { 
 		//변경사항을 파일에 저장하기
 		file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->offset);
 		//dirty bit = 0
-		pml4_set_dirty(thread_current()->pml4, page->va, 0);
+		pml4_set_dirty(t->pml4, page->va, 0);
 	}
-	pml4_clear_page(thread_current()->pml4, page->va);
+	pml4_clear_page(t->pml4, page->va);
 }
 
 /* Do the mmap */
@@ -82,21 +83,22 @@ void *
 do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) {
 	struct file *f = file_reopen(file);
 	void *start_addr = addr;
-	int total_page_count;
-	if(length <= PGSIZE) { //현재 매핑하려는 길이가 페이지 사이즈보다 작을 경우
-		total_page_count = 1; //한 개의 페이지에 모두 들어간다.
-	}
-	else { //하나 이상의 페이지가 필요할 경우
-		if(length % PGSIZE != 0) {  //나누어떨어지지 않을 경우 페이지 1개 더 필요하다.
-			total_page_count = length / PGSIZE + 1;
-		}
-		else {
-			total_page_count = length / PGSIZE;
-		}
-	}
 
 	size_t read_bytes = file_length(f) < length ? file_length(f) : length;
 	size_t zero_bytes = PGSIZE - read_bytes % PGSIZE;
+
+	int total_page_count;
+	if(read_bytes <= PGSIZE) { //현재 매핑하려는 길이가 페이지 사이즈보다 작을 경우
+		total_page_count = 1; //한 개의 페이지에 모두 들어간다.
+	}
+	else { //하나 이상의 페이지가 필요할 경우
+		if(read_bytes % PGSIZE != 0) {  //나누어떨어지지 않을 경우 페이지 1개 더 필요하다.
+			total_page_count = read_bytes / PGSIZE + 1;
+		}
+		else {
+			total_page_count = read_bytes / PGSIZE;
+		}
+	}
 
 	ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
     ASSERT(pg_ofs(addr) == 0);

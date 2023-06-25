@@ -186,6 +186,7 @@ static struct frame *vm_get_frame (void) {
 	if(addr == NULL) {
 		//할당받을 수 있는 영역이 없을 경우 희생자 선택
 		frame = vm_evict_frame();
+		memset(frame->kva, 0, PGSIZE);
 		frame->page = NULL;
 		return frame;
 	}

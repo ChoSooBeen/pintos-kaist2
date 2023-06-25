@@ -95,7 +95,7 @@ tid_t process_fork(const char *name, struct intr_frame *if_ UNUSED)
 	sema_down(&child->load_sema);
 	if (child->exit_status == TID_ERROR)
 	{
-		// sema_up(&child->exit_sema);
+		sema_up(&child->exit_sema);
 		return TID_ERROR;
 	}
 
@@ -835,7 +835,7 @@ struct thread *get_child_process(tid_t child_tid)
 }
 
 /*
- * 새로운 파일 객체제 대한 파일 디스크립터 생성하는 함수
+ * 새로운 파일 객체에 대한 파일 디스크립터 생성하는 함수
  * fdt에도 추가해준다.
  */
 int process_add_file(struct file *f)

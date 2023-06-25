@@ -124,6 +124,9 @@ void syscall_handler(struct intr_frame *f UNUSED) {
 	case SYS_MUNMAP:
 		munmap(f->R.rdi);
 		break;
+	default:
+		exit(-1);
+		break;
 	}
 }
 
@@ -137,9 +140,6 @@ void check_address(void *addr) {
 	if (!is_user_vaddr(addr)) { // 유저 영역에 속해있지 않을 경우
 		exit(-1);
 	}
-	// if(pml4_get_page(thread_current()->pml4, addr) == NULL) {
-	// 	exit(-1);
-	// }
 }
 
 // 운영체제를 중지한다.
@@ -194,7 +194,10 @@ bool create(const char *file, unsigned initial_size) {
 // 파일 삭제
 bool remove(const char *file) {
 	check_address(file); // 유저 영역의 주소인지 확인
-	return filesys_remove(file);
+	lock_acquire(&filesys_lock);
+	bool result = filesys_remove(file);
+	lock_release(&filesys_lock);
+	return result;
 }
 
 // 파일 열기
@@ -210,7 +213,6 @@ int open(const char *file) {
 	int fd = process_add_file(f);
 
 	if (fd == -1) {
-		lock_release(&filesys_lock);
 		file_close(f);
 	}
 	lock_release(&filesys_lock);
@@ -231,15 +233,6 @@ int read(int fd, void *buffer, unsigned size) {
 	check_address(buffer);
 	int result = 0;
 
-	//page fault가 발생하여 읽어올 때 spt확인
-	//쓰기 권한이 없는 경우 종료 -> 읽기 전용이 아닌 페이지에 대한 수정 시도 방지
-	#ifdef VM
-		struct page *read_page = spt_find_page(&thread_current()->spt, buffer);
-		if(read_page && !read_page->writable){
-			exit(-1);
-		}
-	#endif
-
 	lock_acquire(&filesys_lock);
 	if (fd == 0) {
 		result = input_getc();
@@ -253,6 +246,13 @@ int read(int fd, void *buffer, unsigned size) {
 		if (f == NULL) {
 			lock_release(&filesys_lock);
 			return -1;
+		}
+		//page fault가 발생하여 읽어올 때 spt확인
+		//쓰기 권한이 없는 경우 종료 -> 읽기 전용이 아닌 페이지에 대한 수정 시도 방지
+		struct page *read_page = spt_find_page(&thread_current()->spt, buffer);
+		if(read_page && !read_page->writable){
+			lock_release(&filesys_lock);
+			exit(-1);
 		}
 		result = file_read(f, buffer, size);
 	}
@@ -349,5 +349,9 @@ void *mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
 
 //메모리 매핑 해제
 void munmap(void *addr) {
+	check_address(addr);
+	if((uint64_t)addr % PGSIZE != 0) {
+		exit(-1);
+	}
 	do_munmap(addr);
 }
