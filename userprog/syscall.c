@@ -36,6 +36,8 @@ int write(int fd, const void *buffer, unsigned size);
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap(void *addr);
 
 /* System call.
  *
@@ -49,8 +51,6 @@ void close(int fd);
 #define MSR_STAR 0xc0000081			/* Segment selector msr */
 #define MSR_LSTAR 0xc0000082		/* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
-
-struct lock filesys_lock; // 파일 동기화를 위한 전역변수
 
 void syscall_init(void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48 |
@@ -69,6 +69,11 @@ void syscall_init(void) {
 /* The main system call interface */
 void syscall_handler(struct intr_frame *f UNUSED) {
 	int sys_num = f->R.rax; // syscall number
+	
+	//사용자에서 커널 모드로 초기 전환 시 rsp를 struct 스레드에 저장하는 것과 같은 다른 방법을 준비해야 한다.
+	#ifdef VM
+		thread_current()->rsp = f->rsp;
+	#endif
 
 	switch (sys_num) {
 	case SYS_HALT:
@@ -112,6 +117,16 @@ void syscall_handler(struct intr_frame *f UNUSED) {
 		break;
 	case SYS_CLOSE:
 		close(f->R.rdi);
+		break;
+	case SYS_MMAP:
+		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+		break;
+	case SYS_MUNMAP:
+		munmap(f->R.rdi);
+		break;
+	default:
+		exit(-1);
+		break;
 	}
 }
 
@@ -123,9 +138,6 @@ void check_address(void *addr) {
 		exit(-1); // 주소가 없을 경우
 	}
 	if (!is_user_vaddr(addr)) { // 유저 영역에 속해있지 않을 경우
-		exit(-1);
-	}
-	if(pml4_get_page(thread_current()->pml4, addr) == NULL) {
 		exit(-1);
 	}
 }
@@ -173,20 +185,28 @@ int wait(int pid) {
 // 파일 생성
 bool create(const char *file, unsigned initial_size) {
 	check_address(file); // 유저 영역의 주소인지 확인
-	return filesys_create(file, initial_size);
+	lock_acquire(&filesys_lock);
+	bool result = filesys_create(file, initial_size);
+	lock_release(&filesys_lock);
+	return result;
 }
 
 // 파일 삭제
 bool remove(const char *file) {
 	check_address(file); // 유저 영역의 주소인지 확인
-	return filesys_remove(file);
+	lock_acquire(&filesys_lock);
+	bool result = filesys_remove(file);
+	lock_release(&filesys_lock);
+	return result;
 }
 
 // 파일 열기
 int open(const char *file) {
 	check_address(file);
+	lock_acquire(&filesys_lock);
 	struct file *f = filesys_open(file);
 	if (f == NULL) {
+		lock_release(&filesys_lock);
 		return -1;
 	}
 	// 파일 디스크립터 생성하기
@@ -195,6 +215,7 @@ int open(const char *file) {
 	if (fd == -1) {
 		file_close(f);
 	}
+	lock_release(&filesys_lock);
 	return fd;
 }
 
@@ -212,21 +233,30 @@ int read(int fd, void *buffer, unsigned size) {
 	check_address(buffer);
 	int result = 0;
 
+	lock_acquire(&filesys_lock);
 	if (fd == 0) {
 		result = input_getc();
 	}
 	else if (fd == 1) {
+		lock_release(&filesys_lock);
 		return -1;
 	}
 	else {
 		struct file *f = process_get_file(fd);
 		if (f == NULL) {
+			lock_release(&filesys_lock);
 			return -1;
 		}
-		lock_acquire(&filesys_lock);
+		//page fault가 발생하여 읽어올 때 spt확인
+		//쓰기 권한이 없는 경우 종료 -> 읽기 전용이 아닌 페이지에 대한 수정 시도 방지
+		struct page *read_page = spt_find_page(&thread_current()->spt, buffer);
+		if(read_page && !read_page->writable){
+			lock_release(&filesys_lock);
+			exit(-1);
+		}
 		result = file_read(f, buffer, size);
-		lock_release(&filesys_lock);
 	}
+	lock_release(&filesys_lock);
 	return result;
 }
 
@@ -290,4 +320,38 @@ void close(int fd) {
 	}
 	file_close(f);
 	process_close_file(fd); // fdt에서 제거하기
+}
+
+//메모리 매핑
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
+	if(!addr || addr != pg_round_down(addr)) { //addr이 존재하지 않거나 정렬되어 있지 않은 경우
+		return NULL;
+	}
+	if (offset != pg_round_down(offset)) { //offset이 정렬되어 있지 않은 경우
+		return NULL;
+	}
+    if (!is_user_vaddr(addr) || !is_user_vaddr(addr + length)) { //사용자 영역에 존재하지 않을 경우
+		return NULL;
+	}
+    if (spt_find_page(&thread_current()->spt, addr)) { //addr에 할당된 페이지가 존재할 경우
+		return NULL;
+	}
+    struct file *f = process_get_file(fd); //fd에 파일이 없을 경우
+    if (f == NULL) {
+		return NULL;
+	}
+    if (file_length(f) == 0 || (int)length <= 0) { //길이가 0이하일 경우
+		return NULL;
+	}
+
+    return do_mmap(addr, length, writable, f, offset); 
+}
+
+//메모리 매핑 해제
+void munmap(void *addr) {
+	check_address(addr);
+	if((uint64_t)addr % PGSIZE != 0) {
+		exit(-1);
+	}
+	do_munmap(addr);
 }

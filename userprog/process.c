@@ -93,7 +93,7 @@ tid_t process_fork(const char *name, struct intr_frame *if_ UNUSED)
 
 	struct thread *child = get_child_process(tid);
 	sema_down(&child->load_sema);
-	if (child->exit_status == -2)
+	if (child->exit_status == TID_ERROR)
 	{
 		sema_up(&child->exit_sema);
 		return TID_ERROR;
@@ -214,7 +214,7 @@ __do_fork(void *aux)
 error:
 	sema_up(&current->load_sema);
 	// thread_exit();
-	exit(-2);
+	exit(TID_ERROR);
 }
 
 /* Switch the current execution context to the f_name.
@@ -248,7 +248,9 @@ int process_exec(void *f_name)
 	/* ---------------------------------- */
 
 	/* And then load the binary */
+	lock_acquire(&filesys_lock);
 	success = load(file_name, &_if);
+	lock_release(&filesys_lock);
 
 	if (!success)
 	{
@@ -318,6 +320,7 @@ void process_exit(void)
 	palloc_free_page(curr->fdt);
 	file_close(curr->running);
 	process_cleanup();
+	// hash_destroy(&curr->spt.hash_table, NULL);
 	sema_up(&curr->wait_sema);
 	sema_down(&curr->exit_sema);
 }
@@ -693,12 +696,20 @@ install_page(void *upage, void *kpage, bool writable)
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
-static bool
+bool
 lazy_load_segment(struct page *page, void *aux)
 {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	struct vm_entry *vme = (struct vm_entry *)aux;
+	file_seek(vme->f, vme->offset);
+	if(file_read(vme->f, page->frame->kva, vme->read_bytes) != (int)(vme->read_bytes)) {
+		palloc_free_page(page->frame->kva);
+		return false;
+	}
+	memset(page->frame->kva + vme->read_bytes, 0, vme->zero_bytes);
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -732,15 +743,22 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
-											writable, lazy_load_segment, aux))
+		// void *aux = NULL;
+		struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
+		vme->f = file;
+		vme->offset = ofs;
+		vme->read_bytes = page_read_bytes;
+		vme->zero_bytes = page_zero_bytes;
+		//aux 대신 vme를 넘겨준다.
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, vme)) {
 			return false;
-
+		}
+			
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += page_read_bytes;
 	}
 	return true;
 }
@@ -756,7 +774,12 @@ setup_stack(struct intr_frame *if_)
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
-
+	if(vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, 1)) {
+		success = vm_claim_page(stack_bottom);
+		if(success) {
+			if_->rsp = USER_STACK;
+		}
+	}
 	return success;
 }
 #endif /* VM */
@@ -812,7 +835,7 @@ struct thread *get_child_process(tid_t child_tid)
 }
 
 /*
- * 새로운 파일 객체제 대한 파일 디스크립터 생성하는 함수
+ * 새로운 파일 객체에 대한 파일 디스크립터 생성하는 함수
  * fdt에도 추가해준다.
  */
 int process_add_file(struct file *f)

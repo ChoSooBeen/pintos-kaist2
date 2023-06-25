@@ -37,7 +37,6 @@ test_main (void)
     if (memcmp (actual, large, strlen (large)))
         fail ("read of mmap'd file reported bad data");
 
-
     /* Read in anon page */
     for (i = 0; i < PAGE_COUNT; i++) {
         if (big_chunks[i*PAGE_SIZE] != (char) i)

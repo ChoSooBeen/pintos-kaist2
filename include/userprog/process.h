@@ -2,6 +2,7 @@
 #define USERPROG_PROCESS_H
 
 #include "threads/thread.h"
+#include "vm/vm.h"
 
 tid_t process_create_initd(const char *file_name);
 tid_t process_fork(const char *name, struct intr_frame *if_);
@@ -17,5 +18,16 @@ struct thread *get_child_process(tid_t child_tid);
 int process_add_file(struct file *f);
 void process_close_file(int fd);
 struct file *process_get_file(int fd);
+
+//file.c에서 호출하기 위해 선언
+bool lazy_load_segment(struct page *page, void *aux);
+
+//lazy_load_segment에 넘겨줄 인자들
+struct vm_entry {
+	struct file *f;			/* 가상 주소와 매핑된 파일 */
+	off_t offset;			/* 읽어야할 파일 offset */
+	uint32_t read_bytes;	/* 가상 페이지에 쓰여져 있는 데이터 크기 */
+	uint32_t zero_bytes;	/* 0으로 채울 남은 페이지 byte */
+};
 
 #endif /* userprog/process.h */
